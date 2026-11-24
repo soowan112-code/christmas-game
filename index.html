@@ -5,10 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>🎄 크리스마스 트리 꾸미기 - 바구니 받기 게임</title>
 
-    <!-- Three.js 및 필수 라이브러리 로드 -->
+    <script>
+      // GitHub Pages 하위 경로(/christmas-game) 접속 시 끝에 '/'가 없으면 상대경로 404 방지 자동 보정
+      if (window.location.protocol.startsWith('http') && !window.location.pathname.endsWith('/') && !window.location.pathname.endsWith('.html')) {
+        window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
+      }
+    </script>
+
+    <!-- Three.js (r128) 및 필수 라이브러리 로드 -->
     <script src="assets/three.min.js"></script>
     <script src="assets/GLTFLoader.js"></script>
     <script src="assets/OrbitControls.js"></script>
+
+    <!-- CDN 백업 로더 (로컬 assets 파일이 누락되거나 404일 경우 자동 복구) -->
+    <script>
+      if (typeof THREE !== 'undefined') {
+        if (typeof THREE.GLTFLoader === 'undefined') {
+          document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"><\/script>');
+        }
+        if (typeof THREE.OrbitControls === 'undefined') {
+          document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"><\/script>');
+        }
+      }
+    </script>
 
     <!-- file:// 직접 실행 시 Base64 데이터 파일 동적 로드 (GitHub 배포/웹 환경에서는 116MB 다운로드 생략) -->
     <script>
@@ -828,13 +847,7 @@
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
 
-        orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
-        orbitControls.enabled = false;
-        orbitControls.enableDamping = true;
-        orbitControls.dampingFactor = 0.05;
-        orbitControls.maxPolarAngle = Math.PI / 2 + 0.05;
-        orbitControls.minDistance = 3.5;
-        orbitControls.maxDistance = 12.0;
+        initOrbitControls();
 
         const hemiLight = new THREE.HemisphereLight(0xe2f1fc, 0x6e8499, 1.0);
         scene.add(hemiLight);
@@ -849,6 +862,19 @@
         const fillLight = new THREE.DirectionalLight(0xbdd8f0, 0.8);
         fillLight.position.set(-8, 10, -5);
         scene.add(fillLight);
+      }
+
+      function initOrbitControls() {
+        if (orbitControls) return;
+        if (typeof THREE !== 'undefined' && typeof THREE.OrbitControls === 'function') {
+          orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+          orbitControls.enabled = false;
+          orbitControls.enableDamping = true;
+          orbitControls.dampingFactor = 0.05;
+          orbitControls.maxPolarAngle = Math.PI / 2 + 0.05;
+          orbitControls.minDistance = 3.5;
+          orbitControls.maxDistance = 12.0;
+        }
       }
 
       /* ── 겨울 환경 & 지면 생성 ── */
@@ -1179,8 +1205,9 @@
         }
 
         function loadViaHttp(modelIdx, pct) {
+          const modelUrl = `assets/object-${modelIdx + 1}.glb`;
           loader.load(
-            `assets/object-${modelIdx + 1}.glb`,
+            modelUrl,
             (gltf) => {
               onModelReady(modelIdx, gltf);
               currentIndex++;
@@ -1194,12 +1221,39 @@
               }
             },
             (err) => {
-              console.warn(`Load error for model ${modelIdx + 1}:`, err);
+              console.warn(`Load error for model ${modelIdx + 1} (${modelUrl}):`, err);
+              createProceduralCharmFallback(modelIdx);
               currentIndex++;
               loadPct.textContent = `${pct}%`;
               setTimeout(loadNextModel, 15);
             }
           );
+        }
+
+        function createProceduralCharmFallback(index) {
+          const group = new THREE.Group();
+          const meta = CHARM_META[index] || { color: '#ef4444' };
+          const color = new THREE.Color(meta.color || 0xdc2626);
+          const mat = new THREE.MeshStandardMaterial({
+            color: color,
+            metalness: 0.75,
+            roughness: 0.25,
+            emissive: color.clone().multiplyScalar(0.2)
+          });
+          let geo;
+          if (index === 0) geo = new THREE.OctahedronGeometry(0.5, 0);
+          else if (index === 1) geo = new THREE.SphereGeometry(0.45, 16, 16);
+          else if (index === 2) geo = new THREE.IcosahedronGeometry(0.45, 0);
+          else if (index === 3) geo = new THREE.TorusKnotGeometry(0.3, 0.09, 32, 8);
+          else if (index === 4) geo = new THREE.CylinderGeometry(0.2, 0.45, 0.6, 16);
+          else if (index === 5) geo = new THREE.DodecahedronGeometry(0.45, 0);
+          else geo = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          group.add(mesh);
+          loadedGltfTemplates[index] = group;
         }
 
         checkAndStart();
@@ -1355,8 +1409,13 @@
         camera.position.set(0, 2.5, 7.5);
         camera.lookAt(0, 2.2, 0);
 
-        orbitControls.enabled = true;
-        orbitControls.target.set(0, 2.3, 0);
+        if (!orbitControls) {
+          initOrbitControls();
+        }
+        if (orbitControls) {
+          orbitControls.enabled = true;
+          orbitControls.target.set(0, 2.3, 0);
+        }
 
         renderOrnamentTray();
       }
@@ -1595,7 +1654,9 @@
 
         camera.position.copy(playerPos);
         updateCameraRotation();
-        orbitControls.enabled = false;
+        if (orbitControls) {
+          orbitControls.enabled = false;
+        }
 
         currentState = STATE.PLAYING;
       }
@@ -1682,7 +1743,7 @@
         });
 
         // 5. 트리 꾸미기 모드일 때 OrbitControls 회전 갱신
-        if (currentState === STATE.TREE_DECORATE && orbitControls.enabled) {
+        if (currentState === STATE.TREE_DECORATE && orbitControls && orbitControls.enabled) {
           orbitControls.update();
         }
 
